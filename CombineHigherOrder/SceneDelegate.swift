@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import Combine
 
 class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
@@ -22,13 +23,48 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
   private func makeRootViewController() -> UIViewController{
     
     let items = ["Handle Events 1", "Handle Events 2"]
-    let repository = BasicRepository(result: .success(items))
-    let useCase = BasicUseCase(repository: repository)
+    // Mock Result
+    let repository = BasicRepository(result: .failure(NSError(domain: "Any Error", code: 0)))
+//    let repository = BasicRepository(result: .success(items))
+    let decorateRepo = LoggerRepositoryDecorator(decoratee: repository, logger: PrintAppLogger())
+    let useCase = BasicUseCase(repository: decorateRepo)
     let viewModel = BasicViewModel(useCase: useCase)
-    
-    let viewController = ViewController()
+    let viewController = BasicViewController(viewModel: viewModel)
     viewController.view.backgroundColor = .cyan
     return viewController
   }
 }
 
+final class LoggerRepositoryDecorator: Repository {
+  private let decoratee: Repository
+  private let logger: AppLogger
+  
+  init(decoratee: Repository, logger: AppLogger) {
+    self.decoratee = decoratee
+    self.logger = logger
+  }
+  
+  func loadItems() -> AnyPublisher<[String], any Error> {
+    decoratee.loadItems()
+      .handleEvents(
+        receiveOutput: { [weak self] _ in
+          self?.logger.log(event: "receiveOutput")
+        },
+        receiveCompletion: { [weak self] _ in
+          self?.logger.log(event: "receiveCompletion")
+        }
+      ).eraseToAnyPublisher()
+
+  }
+}
+
+
+protocol AppLogger {
+  func log(event: String)
+}
+
+struct PrintAppLogger: AppLogger {
+  func log(event: String) {
+    print("PrintAppLogger", event)
+  }
+}
